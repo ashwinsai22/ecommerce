@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecommerce-client
+  namespace: ecommerce
+  labels:
+    app: ecommerce-client
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ecommerce-client
+  template:
+    metadata:
+      labels:
+        app: ecommerce-client
+    spec:
+      containers:
+        - name: client
+          image: ashwinsai22/ecommerce-client:latest
+          ports:
+            - containerPort: 80

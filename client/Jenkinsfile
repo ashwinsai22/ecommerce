@@ -1,0 +1,51 @@
+pipeline {
+    agent any
+
+    environment {
+        REGISTRY = "docker.io/ashwinsai22"
+        IMAGE_NAME = "ecommerce-client"
+        IMAGE_TAG = "latest"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/ashwinsai22/ecommerce.git'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                dir('client') {
+                    sh '''
+                    docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+                    '''
+                }
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                }
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                sh 'docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG'
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker logout'
+        }
+    }
+}
