@@ -50,7 +50,7 @@ function ProductImageUpload({
     const data = new FormData();
     data.append("my_file", imageFile);
     const response = await axios.post(
-      "http://krmarket-api.bezawada.link/api/admin/products/upload-image",
+      "https://krmarket-api.bezawada.link/api/admin/products/upload-image",
       data
     );
     console.log(response, "response");

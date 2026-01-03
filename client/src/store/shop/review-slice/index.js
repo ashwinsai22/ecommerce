@@ -10,7 +10,7 @@ export const addReview = createAsyncThunk(
   "/order/addReview",
   async (formdata) => {
     const response = await axios.post(
-      "http://krmarket-api.bezawada.link/api/shop/review/add",
+      "https://krmarket-api.bezawada.link/api/shop/review/add",
       formdata
     );
 
@@ -20,7 +20,7 @@ export const addReview = createAsyncThunk(
 
 export const getReviews = createAsyncThunk("/order/getReviews", async (id) => {
   const response = await axios.get(
-    "http://krmarket-api.bezawada.link/api/shop/review/${id}"
+    "https://krmarket-api.bezawada.link/api/shop/review/${id}"
   );
 
   return response.data;

@@ -10,7 +10,7 @@ export const addNewProduct = createAsyncThunk(
   "/products/addnewproduct",
   async (formData) => {
     const result = await axios.post(
-      "http://krmarket-api.bezawada.link/api/admin/products/add",
+      "https://krmarket-api.bezawada.link/api/admin/products/add",
       formData,
       {
         headers: {
@@ -27,7 +27,7 @@ export const fetchAllProducts = createAsyncThunk(
   "/products/fetchAllProducts",
   async () => {
     const result = await axios.get(
-      "http://krmarket-api.bezawada.link/api/admin/products/get"
+      "https://krmarket-api.bezawada.link/api/admin/products/get"
     );
 
     return result?.data;
@@ -38,7 +38,7 @@ export const editProduct = createAsyncThunk(
   "/products/editProduct",
   async ({ id, formData }) => {
     const result = await axios.put(
-      "http://krmarket-api.bezawada.link/api/admin/products/edit/${id}",
+      "https://krmarket-api.bezawada.link/api/admin/products/edit/${id}",
       formData,
       {
         headers: {
@@ -55,7 +55,7 @@ export const deleteProduct = createAsyncThunk(
   "/products/deleteProduct",
   async (id) => {
     const result = await axios.delete(
-      "http://krmarket-api.bezawada.link/api/admin/products/delete/${id}"
+      "https://krmarket-api.bezawada.link/api/admin/products/delete/${id}"
     );
 
     return result?.data;
