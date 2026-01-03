@@ -1,22 +1,49 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ecommerce-client
-  namespace: ecommerce
+  name: krmarket-frontend
+  namespace: krmarket
   labels:
-    app: ecommerce-client
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: krmarket
+    app.kubernetes.io/component: web
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: ecommerce-client
+      app: frontend
   template:
     metadata:
       labels:
-        app: ecommerce-client
+        app: frontend
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/part-of: krmarket
+        app.kubernetes.io/component: web
     spec:
       containers:
-        - name: client
-          image: ashwinsai22/ecommerce-client:latest
+        - name: frontend
+          image: ashwinsai22/kr-market-client:latest
           ports:
             - containerPort: 80
+          envFrom:
+            - secretRef:
+                name: krmarket-secrets
+
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
