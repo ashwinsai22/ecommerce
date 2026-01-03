@@ -1,51 +1,153 @@
 pipeline {
     agent any
 
+    tools {
+        nodejs 'node16'
+        jdk 'jdk17'
+    }
+
     environment {
-        REGISTRY = "docker.io/ashwinsai22"
-        IMAGE_NAME = "ecommerce-client"
-        IMAGE_TAG = "latest"
+        SCANNER_HOME = tool 'sonar-scanner'
+        SONAR_ENV    = 'sonar-server'
+
+        IMAGE_NAME   = 'ashwinsai22/kr-market-client'
+        DOCKER_CREDS = 'docker'
+
+        ENFORCE_SONAR_QG = 'false'
+        ENFORCE_OWASP    = 'false'
+        ENFORCE_TRIVY_FS = 'false'
     }
 
     stages {
+
+        stage('Clean Workspace') {
+            steps { cleanWs() }
+        }
+
         stage('Checkout') {
             steps {
-                git 'https://github.com/ashwinsai22/ecommerce.git'
+                git branch: 'master',
+                    url: 'https://github.com/ashwinsai22/ecommerce.git'
             }
         }
 
-        stage('Docker Build') {
+        /* ===================== SONAR ===================== */
+
+        stage('SonarQube Analysis') {
             steps {
-                dir('client') {
+                withSonarQubeEnv("${SONAR_ENV}") {
                     sh '''
-                    docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+                      cd client
+                      $SCANNER_HOME/bin/sonar-scanner \
+                        -Dsonar.projectKey=kr-market-client \
+                        -Dsonar.projectName=kr-market-client \
+                        -Dsonar.sources=.
                     '''
                 }
             }
         }
 
-        stage('Docker Login') {
+        stage('Quality Gate') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                script {
+                    def qg = waitForQualityGate abortPipeline: false
+                    echo "Quality Gate: ${qg.status}"
+
+                    if (qg.status != 'OK' && env.ENFORCE_SONAR_QG == 'true') {
+                        unstable("Sonar QG failed")
+                    }
                 }
             }
         }
 
-        stage('Docker Push') {
+        /* ===================== BUILD ===================== */
+
+        stage('Build Client') {
             steps {
-                sh 'docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG'
+                sh '''
+                  cd client
+                  npm install
+                  npm run build
+                '''
+            }
+        }
+
+        /* ===================== OWASP ===================== */
+
+        stage('OWASP Dependency Check') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')
+                ]) {
+                    script {
+                        def status = sh(
+                            script: '''
+                              cd client
+                              ${tool 'DP-Check'}/bin/dependency-check.sh \
+                                --scan ./ \
+                                --nvdApiKey "$NVD_API_KEY" \
+                                --disableNodeAudit \
+                                --format XML \
+                                --out .
+                            ''',
+                            returnStatus: true
+                        )
+
+                        if (status != 0 && env.ENFORCE_OWASP == 'true') {
+                            unstable('OWASP issues found')
+                        }
+                    }
+                }
+            }
+        }
+
+        /* ===================== TRIVY FS ===================== */
+
+        stage('Trivy FS Scan') {
+            steps {
+                script {
+                    def status = sh(
+                        script: 'trivy fs client/',
+                        returnStatus: true
+                    )
+
+                    if (status != 0 && env.ENFORCE_TRIVY_FS == 'true') {
+                        unstable('Trivy FS vulnerabilities')
+                    }
+                }
+            }
+        }
+
+        /* ===================== DOCKER ===================== */
+
+        stage('Docker Build & Push') {
+            steps {
+                withDockerRegistry(
+                    credentialsId: DOCKER_CREDS,
+                    url: 'https://index.docker.io/v1/'
+                ) {
+                    sh '''
+                      docker build -t $IMAGE_NAME:latest -f Dockerfile.client .
+                      docker push $IMAGE_NAME:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh 'trivy image $IMAGE_NAME:latest'
             }
         }
     }
 
     post {
         always {
-            sh 'docker logout'
+            emailext(
+                subject: "Client CI: ${currentBuild.currentResult}",
+                body: "Job: ${JOB_NAME}\nBuild: ${BUILD_NUMBER}\nStatus: ${currentBuild.currentResult}",
+                to: 'ponugumatiashwinsai@gmail.com'
+            )
         }
     }
 }
