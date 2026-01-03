@@ -24,7 +24,7 @@ spec:
         - name: backend
           image: ashwinsai22/kr-market-server:latest
           ports:
-            - containerPort: 3000
+            - containerPort: 5000
 
           # 🔐 Secrets injected here
           envFrom:
@@ -34,7 +34,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 3000
+              port: 5000
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 2
@@ -43,7 +43,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 3000
+              port: 5000
             initialDelaySeconds: 40
             periodSeconds: 20
             timeoutSeconds: 2
