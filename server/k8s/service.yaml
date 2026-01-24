@@ -8,11 +8,10 @@ metadata:
     app.kubernetes.io/part-of: krmarket
     app.kubernetes.io/component: api
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: backend
   ports:
     - name: http
       port: 5000
       targetPort: 5000
-      nodePort: 30151
