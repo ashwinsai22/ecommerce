@@ -21,7 +21,7 @@ export const getOrderDetailsForAdmin = createAsyncThunk(
   "/order/getOrderDetailsForAdmin",
   async (id) => {
     const response = await axios.get(
-      "https://krmarket-api.bezawada.link/api/admin/orders/details/${id}"
+      `https://krmarket-api.bezawada.link/api/admin/orders/details/${id}`
     );
 
     return response.data;
@@ -32,7 +32,7 @@ export const updateOrderStatus = createAsyncThunk(
   "/order/updateOrderStatus",
   async ({ id, orderStatus }) => {
     const response = await axios.put(
-      "https://krmarket-api.bezawada.link/api/admin/orders/update/${id}",
+      `https://krmarket-api.bezawada.link/api/admin/orders/update/${id}`,
       {
         orderStatus,
       }

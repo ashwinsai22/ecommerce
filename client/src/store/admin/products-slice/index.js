@@ -38,7 +38,7 @@ export const editProduct = createAsyncThunk(
   "/products/editProduct",
   async ({ id, formData }) => {
     const result = await axios.put(
-      "https://krmarket-api.bezawada.link/api/admin/products/edit/${id}",
+      `https://krmarket-api.bezawada.link/api/admin/products/edit/${id}`,
       formData,
       {
         headers: {
@@ -55,7 +55,7 @@ export const deleteProduct = createAsyncThunk(
   "/products/deleteProduct",
   async (id) => {
     const result = await axios.delete(
-      "https://krmarket-api.bezawada.link/api/admin/products/delete/${id}"
+      `https://krmarket-api.bezawada.link/api/admin/products/delete/${id}`
     );
 
     return result?.data;

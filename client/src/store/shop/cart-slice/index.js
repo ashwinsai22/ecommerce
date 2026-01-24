@@ -26,7 +26,7 @@ export const fetchCartItems = createAsyncThunk(
   "cart/fetchCartItems",
   async (userId) => {
     const response = await axios.get(
-      "https://krmarket-api.bezawada.link/api/shop/cart/get/${userId}"
+      `https://krmarket-api.bezawada.link/api/shop/cart/get/${userId}`
     );
 
     return response.data;
@@ -37,7 +37,7 @@ export const deleteCartItem = createAsyncThunk(
   "cart/deleteCartItem",
   async ({ userId, productId }) => {
     const response = await axios.delete(
-      "https://krmarket-api.bezawada.link/api/shop/cart/${userId}/${productId}"
+      `https://krmarket-api.bezawada.link/api/shop/cart/${userId}/${productId}`
     );
 
     return response.data;
@@ -48,7 +48,7 @@ export const updateCartQuantity = createAsyncThunk(
   "cart/updateCartQuantity",
   async ({ userId, productId, quantity }) => {
     const response = await axios.put(
-      "https://krmarket-api.bezawada.link/api/shop/cart/update-cart",
+      `https://krmarket-api.bezawada.link/api/shop/cart/update-cart`,
       {
         userId,
         productId,
