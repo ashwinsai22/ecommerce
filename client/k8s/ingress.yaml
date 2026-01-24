@@ -8,6 +8,9 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
     nginx.ingress.kubernetes.io/x-forwarded-proto: "https"
+
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      try_files $uri $uri/ /index.html;
 spec:
   ingressClassName: public
   rules:
