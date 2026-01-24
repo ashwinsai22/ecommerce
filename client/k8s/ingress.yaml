@@ -9,16 +9,16 @@ metadata:
     nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
     nginx.ingress.kubernetes.io/x-forwarded-proto: "https"
 
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      try_files $uri $uri/ /index.html;
+    # ✅ REQUIRED for SPA on MicroK8s
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
 spec:
   ingressClassName: public
   rules:
   - host: krmarket.bezawada.link
     http:
       paths:
-      - path: /
-        pathType: Prefix
+      - path: /(.*)
+        pathType: ImplementationSpecific
         backend:
           service:
             name: krmarket-frontend
