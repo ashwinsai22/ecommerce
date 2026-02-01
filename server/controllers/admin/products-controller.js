@@ -1,155 +1,236 @@
 const { imageUploadUtil } = require("../../helpers/cloudinary");
 const Product = require("../../models/Product");
+const logger = require("../../utils/logger");
 
+/**
+ * Upload product image
+ */
 const handleImageUpload = async (req, res) => {
+  logger.info("PRODUCT_IMAGE_UPLOAD_REQUESTED", {
+    traceId: req.id,
+    mimeType: req.file?.mimetype,
+  });
+
   try {
+    if (!req.file) {
+      logger.warn("PRODUCT_IMAGE_UPLOAD_NO_FILE", {
+        traceId: req.id,
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: "No image file provided",
+      });
+    }
+
     const b64 = Buffer.from(req.file.buffer).toString("base64");
-    const url = "data:" + req.file.mimetype + ";base64," + b64;
+    const url = `data:${req.file.mimetype};base64,${b64}`;
     const result = await imageUploadUtil(url);
+
+    logger.info("PRODUCT_IMAGE_UPLOAD_SUCCESS", {
+      traceId: req.id,
+      publicId: result?.public_id,
+    });
 
     res.json({
       success: true,
       result,
     });
   } catch (error) {
-    console.log(error);
-    res.json({
+    logger.error("PRODUCT_IMAGE_UPLOAD_FAILED", {
+      traceId: req.id,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    res.status(500).json({
       success: false,
-      message: "Error occured",
+      message: "Error occurred",
     });
   }
 };
 
-//add a new product
+/**
+ * Add a new product
+ */
 const addProduct = async (req, res) => {
+  const {
+    title,
+    category,
+    brand,
+    price,
+    salePrice,
+    totalStock,
+    averageReview,
+  } = req.body;
+
+  logger.info("PRODUCT_CREATE_REQUESTED", {
+    traceId: req.id,
+    title,
+    category,
+    brand,
+  });
+
   try {
-    const {
-      image,
-      title,
-      description,
-      category,
-      brand,
-      price,
-      salePrice,
-      totalStock,
-      averageReview,
-    } = req.body;
+    const newlyCreatedProduct = new Product(req.body);
+    await newlyCreatedProduct.save();
 
-    console.log(averageReview, "averageReview");
-
-    const newlyCreatedProduct = new Product({
-      image,
-      title,
-      description,
-      category,
-      brand,
-      price,
-      salePrice,
-      totalStock,
-      averageReview,
+    logger.info("PRODUCT_CREATE_SUCCESS", {
+      traceId: req.id,
+      productId: newlyCreatedProduct._id,
     });
 
-    await newlyCreatedProduct.save();
     res.status(201).json({
       success: true,
       data: newlyCreatedProduct,
     });
   } catch (e) {
-    console.log(e);
+    logger.error("PRODUCT_CREATE_FAILED", {
+      traceId: req.id,
+      error: e.message,
+      stack: e.stack,
+    });
+
     res.status(500).json({
       success: false,
-      message: "Error occured",
+      message: "Error occurred",
     });
   }
 };
 
-//fetch all products
-
+/**
+ * Fetch all products
+ */
 const fetchAllProducts = async (req, res) => {
+  logger.info("PRODUCT_FETCH_ALL_REQUESTED", {
+    traceId: req.id,
+  });
+
   try {
     const listOfProducts = await Product.find({});
+
+    logger.info("PRODUCT_FETCH_ALL_SUCCESS", {
+      traceId: req.id,
+      count: listOfProducts.length,
+    });
+
     res.status(200).json({
       success: true,
       data: listOfProducts,
     });
   } catch (e) {
-    console.log(e);
+    logger.error("PRODUCT_FETCH_ALL_FAILED", {
+      traceId: req.id,
+      error: e.message,
+      stack: e.stack,
+    });
+
     res.status(500).json({
       success: false,
-      message: "Error occured",
+      message: "Error occurred",
     });
   }
 };
 
-//edit a product
+/**
+ * Edit product
+ */
 const editProduct = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      image,
-      title,
-      description,
-      category,
-      brand,
-      price,
-      salePrice,
-      totalStock,
-      averageReview,
-    } = req.body;
+  const { id } = req.params;
 
-    let findProduct = await Product.findById(id);
-    if (!findProduct)
+  logger.info("PRODUCT_UPDATE_REQUESTED", {
+    traceId: req.id,
+    productId: id,
+  });
+
+  try {
+    const findProduct = await Product.findById(id);
+
+    if (!findProduct) {
+      logger.warn("PRODUCT_UPDATE_NOT_FOUND", {
+        traceId: req.id,
+        productId: id,
+      });
+
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
+    }
 
-    findProduct.title = title || findProduct.title;
-    findProduct.description = description || findProduct.description;
-    findProduct.category = category || findProduct.category;
-    findProduct.brand = brand || findProduct.brand;
-    findProduct.price = price === "" ? 0 : price || findProduct.price;
-    findProduct.salePrice =
-      salePrice === "" ? 0 : salePrice || findProduct.salePrice;
-    findProduct.totalStock = totalStock || findProduct.totalStock;
-    findProduct.image = image || findProduct.image;
-    findProduct.averageReview = averageReview || findProduct.averageReview;
-
+    Object.assign(findProduct, req.body);
     await findProduct.save();
+
+    logger.info("PRODUCT_UPDATE_SUCCESS", {
+      traceId: req.id,
+      productId: id,
+    });
+
     res.status(200).json({
       success: true,
       data: findProduct,
     });
   } catch (e) {
-    console.log(e);
+    logger.error("PRODUCT_UPDATE_FAILED", {
+      traceId: req.id,
+      productId: id,
+      error: e.message,
+      stack: e.stack,
+    });
+
     res.status(500).json({
       success: false,
-      message: "Error occured",
+      message: "Error occurred",
     });
   }
 };
 
-//delete a product
+/**
+ * Delete product
+ */
 const deleteProduct = async (req, res) => {
+  const { id } = req.params;
+
+  logger.info("PRODUCT_DELETE_REQUESTED", {
+    traceId: req.id,
+    productId: id,
+  });
+
   try {
-    const { id } = req.params;
     const product = await Product.findByIdAndDelete(id);
 
-    if (!product)
+    if (!product) {
+      logger.warn("PRODUCT_DELETE_NOT_FOUND", {
+        traceId: req.id,
+        productId: id,
+      });
+
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
+    }
+
+    logger.info("PRODUCT_DELETE_SUCCESS", {
+      traceId: req.id,
+      productId: id,
+    });
 
     res.status(200).json({
       success: true,
-      message: "Product delete successfully",
+      message: "Product deleted successfully",
     });
   } catch (e) {
-    console.log(e);
+    logger.error("PRODUCT_DELETE_FAILED", {
+      traceId: req.id,
+      productId: id,
+      error: e.message,
+      stack: e.stack,
+    });
+
     res.status(500).json({
       success: false,
-      message: "Error occured",
+      message: "Error occurred",
     });
   }
 };

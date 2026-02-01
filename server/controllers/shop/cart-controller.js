@@ -1,11 +1,29 @@
 const Cart = require("../../models/Cart");
 const Product = require("../../models/Product");
+const logger = require("../../utils/logger");
 
+/**
+ * Add product to cart
+ */
 const addToCart = async (req, res) => {
-  try {
-    const { userId, productId, quantity } = req.body;
+  const { userId, productId, quantity } = req.body;
 
+  logger.info("CART_ADD_ITEM_REQUESTED", {
+    traceId: req.id,
+    userId,
+    productId,
+    quantity,
+  });
+
+  try {
     if (!userId || !productId || quantity <= 0) {
+      logger.warn("CART_ADD_ITEM_INVALID_DATA", {
+        traceId: req.id,
+        userId,
+        productId,
+        quantity,
+      });
+
       return res.status(400).json({
         success: false,
         message: "Invalid data provided!",
@@ -15,6 +33,11 @@ const addToCart = async (req, res) => {
     const product = await Product.findById(productId);
 
     if (!product) {
+      logger.warn("CART_ADD_ITEM_PRODUCT_NOT_FOUND", {
+        traceId: req.id,
+        productId,
+      });
+
       return res.status(404).json({
         success: false,
         message: "Product not found",
@@ -24,26 +47,53 @@ const addToCart = async (req, res) => {
     let cart = await Cart.findOne({ userId });
 
     if (!cart) {
+      logger.info("CART_CREATED_FOR_USER", {
+        traceId: req.id,
+        userId,
+      });
+
       cart = new Cart({ userId, items: [] });
     }
 
-    const findCurrentProductIndex = cart.items.findIndex(
+    const itemIndex = cart.items.findIndex(
       (item) => item.productId.toString() === productId
     );
 
-    if (findCurrentProductIndex === -1) {
+    if (itemIndex === -1) {
       cart.items.push({ productId, quantity });
+
+      logger.info("CART_ITEM_ADDED", {
+        traceId: req.id,
+        userId,
+        productId,
+        quantity,
+      });
     } else {
-      cart.items[findCurrentProductIndex].quantity += quantity;
+      cart.items[itemIndex].quantity += quantity;
+
+      logger.info("CART_ITEM_QUANTITY_INCREMENTED", {
+        traceId: req.id,
+        userId,
+        productId,
+        quantity: cart.items[itemIndex].quantity,
+      });
     }
 
     await cart.save();
+
     res.status(200).json({
       success: true,
       data: cart,
     });
   } catch (error) {
-    console.log(error);
+    logger.error("CART_ADD_ITEM_FAILED", {
+      traceId: req.id,
+      userId,
+      productId,
+      error: error.message,
+      stack: error.stack,
+    });
+
     res.status(500).json({
       success: false,
       message: "Error",
@@ -51,14 +101,26 @@ const addToCart = async (req, res) => {
   }
 };
 
+/**
+ * Fetch cart items
+ */
 const fetchCartItems = async (req, res) => {
-  try {
-    const { userId } = req.params;
+  const { userId } = req.params;
 
+  logger.info("CART_FETCH_REQUESTED", {
+    traceId: req.id,
+    userId,
+  });
+
+  try {
     if (!userId) {
+      logger.warn("CART_FETCH_NO_USER_ID", {
+        traceId: req.id,
+      });
+
       return res.status(400).json({
         success: false,
-        message: "User id is manadatory!",
+        message: "User id is mandatory!",
       });
     }
 
@@ -68,6 +130,11 @@ const fetchCartItems = async (req, res) => {
     });
 
     if (!cart) {
+      logger.warn("CART_NOT_FOUND", {
+        traceId: req.id,
+        userId,
+      });
+
       return res.status(404).json({
         success: false,
         message: "Cart not found!",
@@ -75,10 +142,16 @@ const fetchCartItems = async (req, res) => {
     }
 
     const validItems = cart.items.filter(
-      (productItem) => productItem.productId
+      (item) => item.productId
     );
 
     if (validItems.length < cart.items.length) {
+      logger.warn("CART_INVALID_ITEMS_CLEANED", {
+        traceId: req.id,
+        userId,
+        removed: cart.items.length - validItems.length,
+      });
+
       cart.items = validItems;
       await cart.save();
     }
@@ -92,6 +165,12 @@ const fetchCartItems = async (req, res) => {
       quantity: item.quantity,
     }));
 
+    logger.info("CART_FETCH_SUCCESS", {
+      traceId: req.id,
+      userId,
+      itemCount: populateCartItems.length,
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -100,7 +179,13 @@ const fetchCartItems = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log(error);
+    logger.error("CART_FETCH_FAILED", {
+      traceId: req.id,
+      userId,
+      error: error.message,
+      stack: error.stack,
+    });
+
     res.status(500).json({
       success: false,
       message: "Error",
@@ -108,11 +193,28 @@ const fetchCartItems = async (req, res) => {
   }
 };
 
+/**
+ * Update cart item quantity
+ */
 const updateCartItemQty = async (req, res) => {
-  try {
-    const { userId, productId, quantity } = req.body;
+  const { userId, productId, quantity } = req.body;
 
+  logger.info("CART_UPDATE_ITEM_REQUESTED", {
+    traceId: req.id,
+    userId,
+    productId,
+    quantity,
+  });
+
+  try {
     if (!userId || !productId || quantity <= 0) {
+      logger.warn("CART_UPDATE_ITEM_INVALID_DATA", {
+        traceId: req.id,
+        userId,
+        productId,
+        quantity,
+      });
+
       return res.status(400).json({
         success: false,
         message: "Invalid data provided!",
@@ -120,25 +222,37 @@ const updateCartItemQty = async (req, res) => {
     }
 
     const cart = await Cart.findOne({ userId });
+
     if (!cart) {
+      logger.warn("CART_UPDATE_CART_NOT_FOUND", {
+        traceId: req.id,
+        userId,
+      });
+
       return res.status(404).json({
         success: false,
         message: "Cart not found!",
       });
     }
 
-    const findCurrentProductIndex = cart.items.findIndex(
+    const itemIndex = cart.items.findIndex(
       (item) => item.productId.toString() === productId
     );
 
-    if (findCurrentProductIndex === -1) {
+    if (itemIndex === -1) {
+      logger.warn("CART_UPDATE_ITEM_NOT_FOUND", {
+        traceId: req.id,
+        userId,
+        productId,
+      });
+
       return res.status(404).json({
         success: false,
-        message: "Cart item not present !",
+        message: "Cart item not present!",
       });
     }
 
-    cart.items[findCurrentProductIndex].quantity = quantity;
+    cart.items[itemIndex].quantity = quantity;
     await cart.save();
 
     await cart.populate({
@@ -155,6 +269,13 @@ const updateCartItemQty = async (req, res) => {
       quantity: item.quantity,
     }));
 
+    logger.info("CART_UPDATE_ITEM_SUCCESS", {
+      traceId: req.id,
+      userId,
+      productId,
+      quantity,
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -163,7 +284,14 @@ const updateCartItemQty = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log(error);
+    logger.error("CART_UPDATE_ITEM_FAILED", {
+      traceId: req.id,
+      userId,
+      productId,
+      error: error.message,
+      stack: error.stack,
+    });
+
     res.status(500).json({
       success: false,
       message: "Error",
@@ -171,10 +299,26 @@ const updateCartItemQty = async (req, res) => {
   }
 };
 
+/**
+ * Delete cart item
+ */
 const deleteCartItem = async (req, res) => {
+  const { userId, productId } = req.params;
+
+  logger.info("CART_DELETE_ITEM_REQUESTED", {
+    traceId: req.id,
+    userId,
+    productId,
+  });
+
   try {
-    const { userId, productId } = req.params;
     if (!userId || !productId) {
+      logger.warn("CART_DELETE_ITEM_INVALID_PARAMS", {
+        traceId: req.id,
+        userId,
+        productId,
+      });
+
       return res.status(400).json({
         success: false,
         message: "Invalid data provided!",
@@ -187,15 +331,30 @@ const deleteCartItem = async (req, res) => {
     });
 
     if (!cart) {
+      logger.warn("CART_DELETE_CART_NOT_FOUND", {
+        traceId: req.id,
+        userId,
+      });
+
       return res.status(404).json({
         success: false,
         message: "Cart not found!",
       });
     }
 
+    const originalCount = cart.items.length;
+
     cart.items = cart.items.filter(
       (item) => item.productId._id.toString() !== productId
     );
+
+    if (cart.items.length === originalCount) {
+      logger.warn("CART_DELETE_ITEM_NOT_FOUND", {
+        traceId: req.id,
+        userId,
+        productId,
+      });
+    }
 
     await cart.save();
 
@@ -213,6 +372,13 @@ const deleteCartItem = async (req, res) => {
       quantity: item.quantity,
     }));
 
+    logger.info("CART_DELETE_ITEM_SUCCESS", {
+      traceId: req.id,
+      userId,
+      productId,
+      remainingItems: populateCartItems.length,
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -221,7 +387,14 @@ const deleteCartItem = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log(error);
+    logger.error("CART_DELETE_ITEM_FAILED", {
+      traceId: req.id,
+      userId,
+      productId,
+      error: error.message,
+      stack: error.stack,
+    });
+
     res.status(500).json({
       success: false,
       message: "Error",

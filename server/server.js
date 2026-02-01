@@ -4,6 +4,10 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const morgan = require("morgan");
+const { randomUUID } = require("crypto");
+
+const logger = require("./utils/logger"); // ✅ USE CENTRAL LOGGER
 
 const authRouter = require("./routes/auth/auth-routes");
 const adminProductsRouter = require("./routes/admin/products-routes");
@@ -18,15 +22,57 @@ const shopReviewRouter = require("./routes/shop/review-routes");
 
 const commonFeatureRouter = require("./routes/common/feature-routes");
 
-// MongoDB connection
-mongoose
-  .connect(process.env.MONGO_URL)
-  .then(() => console.log("MongoDB connected"))
-  .catch((error) => console.log(error));
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+/* =========================
+   MongoDB Connection
+   ========================= */
+mongoose
+  .connect(process.env.MONGO_URL)
+  .then(() => logger.info("MONGODB_CONNECTED"))
+  .catch((error) =>
+    logger.error("MONGODB_CONNECTION_FAILED", {
+      error: error.message,
+      stack: error.stack,
+    })
+  );
+
+/* =========================
+   Request Correlation ID
+   ========================= */
+app.use((req, res, next) => {
+  req.id = randomUUID();
+  res.setHeader("X-Request-Id", req.id);
+  next();
+});
+
+/* =========================
+   Morgan Access Logs (JSON)
+   ========================= */
+morgan.token("trace-id", (req) => req.id);
+
+app.use(
+  morgan((tokens, req, res) =>
+    JSON.stringify({
+      level: "info",
+      type: "access",
+      time: new Date().toISOString(),
+      traceId: tokens["trace-id"](req, res),
+      method: tokens.method(req, res),
+      url: tokens.url(req, res),
+      status: Number(tokens.status(req, res)),
+      responseTime: `${tokens["response-time"](req, res)} ms`,
+      contentLength: tokens.res(req, res, "content-length"),
+      ip: tokens["remote-addr"](req, res),
+      userAgent: tokens["user-agent"](req, res),
+    })
+  )
+);
+
+/* =========================
+   Middleware
+   ========================= */
 app.use(
   cors({
     origin: process.env.CLIENT_BASE_URL,
@@ -45,13 +91,15 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 
-/* ===========================
-   Health Check Endpoint
-   =========================== */
+/* =========================
+   Health Check
+   ========================= */
 app.get("/health", (req, res) => {
   const dbState = mongoose.connection.readyState;
 
   if (dbState === 1) {
+    logger.info("HEALTH_CHECK_OK", { traceId: req.id });
+
     return res.status(200).json({
       status: "UP",
       database: "CONNECTED",
@@ -60,6 +108,8 @@ app.get("/health", (req, res) => {
     });
   }
 
+  logger.warn("HEALTH_CHECK_DB_DOWN", { traceId: req.id });
+
   res.status(503).json({
     status: "DOWN",
     database: "DISCONNECTED",
@@ -67,9 +117,9 @@ app.get("/health", (req, res) => {
   });
 });
 
-/* ===========================
-   API Routes
-   =========================== */
+/* =========================
+   Routes
+   ========================= */
 app.use("/api/auth", authRouter);
 app.use("/api/admin/products", adminProductsRouter);
 app.use("/api/admin/orders", adminOrderRouter);
@@ -83,6 +133,43 @@ app.use("/api/shop/review", shopReviewRouter);
 
 app.use("/api/common/feature", commonFeatureRouter);
 
-app.listen(PORT, () =>
-  console.log(`Server is now running on port ${PORT}`)
-);
+/* =========================
+   404 Handler
+   ========================= */
+app.use((req, res) => {
+  logger.warn("ROUTE_NOT_FOUND", {
+    traceId: req.id,
+    method: req.method,
+    url: req.originalUrl,
+  });
+
+  res.status(404).json({
+    message: "Route not found",
+    traceId: req.id,
+  });
+});
+
+/* =========================
+   Global Error Handler
+   ========================= */
+app.use((err, req, res, next) => {
+  logger.error("UNHANDLED_ERROR", {
+    traceId: req.id,
+    method: req.method,
+    url: req.originalUrl,
+    error: err.message,
+    stack: err.stack,
+  });
+
+  res.status(500).json({
+    message: "Internal Server Error",
+    traceId: req.id,
+  });
+});
+
+/* =========================
+   Start Server
+   ========================= */
+app.listen(PORT, () => {
+  logger.info("SERVER_STARTED", { port: PORT });
+});
