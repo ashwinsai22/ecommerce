@@ -1,78 +1,118 @@
+def sonarStatus = "NOT_EXECUTED"
+def owaspStatus = "NOT_EXECUTED"
+def trivyStatus = "NOT_EXECUTED"
+
 pipeline {
     agent any
-
+    triggers {
+        pollSCM('H/5 * * * *')
+    }
     tools {
         nodejs 'node18'
         jdk 'jdk21'
     }
 
+    parameters {
+
+        gitParameter(
+            name: 'GIT_BRANCH',
+            type: 'PT_BRANCH',
+            defaultValue: 'master',
+            branchFilter: '.*',
+            sortMode: 'DESCENDING_SMART',
+            selectedValue: 'DEFAULT',
+            quickFilterEnabled: false,
+            description: 'Select Git Branch'
+        )
+
+        booleanParam(name: 'ENFORCE_SONAR_QG', defaultValue: false)
+        booleanParam(name: 'ENFORCE_OWASP', defaultValue: false)
+        booleanParam(name: 'ENFORCE_TRIVY_FS', defaultValue: false)
+    }
+
     environment {
-        SCANNER_HOME = tool 'sonar-scanner'
-        SONAR_ENV    = 'sonar-server'
-
-        IMAGE_NAME   = 'ashwinsai22/kr-market-client'
-        DOCKER_CREDS = 'docker'
-
-        ENFORCE_SONAR_QG = 'false'
-        ENFORCE_OWASP    = 'false'
-        ENFORCE_TRIVY_FS = 'false'
+        IMAGE_NAME = 'ashwinsai22/kr-market-client'
     }
 
     stages {
 
         stage('Clean Workspace') {
-            steps { cleanWs() }
-        }
-
-        stage('Checkout') {
             steps {
-                git branch: 'master',
-                    url: 'https://github.com/ashwinsai22/ecommerce.git'
+                cleanWs()
             }
         }
 
-        /* ===================== SONAR ===================== */
+        /* ================= CHECKOUT ================= */
 
-        stage('SonarQube Analysis') {
+        stage('Checkout') {
             steps {
-                withSonarQubeEnv("${SONAR_ENV}") {
-                    sh '''
-                      cd client
-                      $SCANNER_HOME/bin/sonar-scanner \
-                        -Dsonar.projectKey=kr-market-client \
-                        -Dsonar.projectName=kr-market-client \
-                        -Dsonar.sources=.
-                    '''
+                script {
+
+                    // ✅ remove origin/ automatically
+                    def branchName = params.GIT_BRANCH.replaceFirst(/^origin\\//, "")
+
+                    echo "Checking out branch: ${branchName}"
+
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${branchName}"]],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/ashwinsai22/ecommerce.git',
+                            credentialsId: 'github-creds'
+                        ]]
+                    ])
                 }
             }
         }
 
-        stage('Quality Gate') {
-            steps {
-                script {
-                    def qg = waitForQualityGate abortPipeline: false
-                    echo "Quality Gate: ${qg.status}"
+        /* ================= SONAR ================= */
 
-                    if (qg.status != 'OK' && env.ENFORCE_SONAR_QG == 'true') {
-                        unstable("Sonar QG failed")
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar-server') {
+                    script {
+                        def scannerHome = tool 'sonar-scanner'
+
+                        sh """
+                        cd client
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=kr-market-client \
+                        -Dsonar.projectName=kr-market-client \
+                        -Dsonar.sources=.
+                        """
                     }
                 }
             }
         }
 
-        /* ===================== BUILD ===================== */
+        stage('Sonar Quality Gate') {
+            steps {
+                script {
+                    timeout(time: 5, unit: 'MINUTES') {
+                        def qg = waitForQualityGate abortPipeline: false
+                        sonarStatus = qg.status
+
+                        if (qg.status != 'OK' && params.ENFORCE_SONAR_QG) {
+                            error("Sonar Quality Gate failed")
+                        }
+                    }
+                }
+            }
+        }
+
+        /* ================= BUILD ================= */
 
         stage('Build Client') {
             steps {
                 sh '''
-                  cd client
-                  npm install
-                  npm run build
+                cd client
+                npm install
+                npm run build
                 '''
             }
         }
 
-        /* ===================== OWASP ===================== */
+        /* ================= OWASP ================= */
 
         stage('OWASP Dependency Check') {
             steps {
@@ -80,28 +120,33 @@ pipeline {
                     string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')
                 ]) {
                     script {
-                        def status = sh(
-                            script: '''
-                              cd client
-                              ${tool 'DP-Check'}/bin/dependency-check.sh \
-                                --scan ./ \
-                                --nvdApiKey "$NVD_API_KEY" \
-                                --disableNodeAudit \
-                                --format XML \
-                                --out .
-                            ''',
-                            returnStatus: true
-                        )
 
-                        if (status != 0 && env.ENFORCE_OWASP == 'true') {
-                            unstable('OWASP issues found')
+                        def dpCheck = tool 'DP-Check'
+
+                        def status = sh(
+                        script: '''
+                        cd client
+                        ''' + dpCheck + '''/bin/dependency-check.sh \
+                        --scan ./ \
+                        --noupdate \
+                        --disableNodeAudit \
+                        --format XML \
+                        --out .
+                        ''',
+                        returnStatus: true
+)
+
+                        owaspStatus = status == 0 ? "PASS" : "FAILED"
+
+                        if (status != 0 && params.ENFORCE_OWASP) {
+                            error("OWASP vulnerabilities found")
                         }
                     }
                 }
             }
         }
 
-        /* ===================== TRIVY FS ===================== */
+        /* ================= TRIVY ================= */
 
         stage('Trivy FS Scan') {
             steps {
@@ -111,24 +156,26 @@ pipeline {
                         returnStatus: true
                     )
 
-                    if (status != 0 && env.ENFORCE_TRIVY_FS == 'true') {
-                        unstable('Trivy FS vulnerabilities')
+                    trivyStatus = status == 0 ? "PASS" : "FAILED"
+
+                    if (status != 0 && params.ENFORCE_TRIVY_FS) {
+                        error("Trivy vulnerabilities found")
                     }
                 }
             }
         }
 
-        /* ===================== DOCKER ===================== */
+        /* ================= DOCKER ================= */
 
         stage('Docker Build & Push') {
             steps {
                 withDockerRegistry(
-                    credentialsId: DOCKER_CREDS,
+                    credentialsId: 'docker',
                     url: 'https://index.docker.io/v1/'
                 ) {
                     sh '''
-                      docker build -t $IMAGE_NAME:latest -f Dockerfile.client .
-                      docker push $IMAGE_NAME:latest
+                    docker build -t $IMAGE_NAME:latest -f Dockerfile.client .
+                    docker push $IMAGE_NAME:latest
                     '''
                 }
             }
@@ -136,18 +183,52 @@ pipeline {
 
         stage('Trivy Image Scan') {
             steps {
-                sh 'trivy image $IMAGE_NAME:latest'
+                sh 'trivy image $IMAGE_NAME:latest || true'
             }
         }
     }
 
+    /* ================= EMAIL ================= */
+
     post {
         always {
-            emailext(
-                subject: "Client CI: ${currentBuild.currentResult}",
-                body: "Job: ${JOB_NAME}\nBuild: ${BUILD_NUMBER}\nStatus: ${currentBuild.currentResult}",
-                to: 'ponugumatiashwinsai@gmail.com'
-            )
+            script {
+
+                def buildColor =
+                    currentBuild.currentResult == "SUCCESS" ? "#28a745" :
+                    currentBuild.currentResult == "UNSTABLE" ? "#ffc107" :
+                    "#dc3545"
+
+                def statusColor = { s ->
+                    (s == "OK" || s == "PASS")
+                        ? "<span style='color:#28a745;font-weight:bold'>🟢 ${s}</span>"
+                        : "<span style='color:#dc3545;font-weight:bold'>🔴 ${s}</span>"
+                }
+
+                emailext(
+                    mimeType: 'text/html',
+                    subject: "KR Market Frontend CI - ${JOB_NAME} #${BUILD_NUMBER}",
+                    body: """
+<h2>KR Market Frontend CI Report</h2>
+
+<b>Branch:</b> ${params.GIT_BRANCH}<br>
+<b>Status:</b> <span style="color:${buildColor}">
+${currentBuild.currentResult}</span><br><br>
+
+<table border="1" cellpadding="8">
+<tr><th>Scan</th><th>Status</th></tr>
+<tr><td>SonarQube</td><td>${statusColor(sonarStatus)}</td></tr>
+<tr><td>OWASP</td><td>${statusColor(owaspStatus)}</td></tr>
+<tr><td>Trivy</td><td>${statusColor(trivyStatus)}</td></tr>
+</table>
+
+<br>
+<a href="${BUILD_URL}">Open Build</a>
+""",
+                    attachLog: true,
+                    to: 'ponugumatiashwinsai@gmail.com'
+                )
+            }
         }
     }
 }

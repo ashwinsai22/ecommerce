@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: krmarket-ingress
+  namespace: krmarket
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/x-forwarded-proto: "https"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: public
+  rules:
+  - host: krmarket-api.bezawada.link
+    http:
+      paths:
+      - path: /api/auth(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: identity-service
+            port:
+              number: 5001
+      - path: /api/catalog(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: catalog-service
+            port:
+              number: 5002
+      - path: /api/cart(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: cart-service
+            port:
+              number: 5003
+      - path: /api/orders(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: order-service
+            port:
+              number: 5004
+      - path: /api/search(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: search-service
+            port:
+              number: 5005
