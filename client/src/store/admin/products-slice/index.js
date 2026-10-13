@@ -1,5 +1,6 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import axios from "axios";
+import { getApiUrl } from "@/config/api";
 
 const initialState = {
   isLoading: false,
@@ -10,7 +11,7 @@ export const addNewProduct = createAsyncThunk(
   "/products/addnewproduct",
   async (formData) => {
     const result = await axios.post(
-      `${import.meta.env.VITE_API_URL}/api/admin/products/add`,
+      `${getApiUrl()}/api/admin/products/add`,
       formData,
       {
         headers: {
@@ -27,7 +28,7 @@ export const fetchAllProducts = createAsyncThunk(
   "/products/fetchAllProducts",
   async () => {
     const result = await axios.get(
-      `${import.meta.env.VITE_API_URL}/api/admin/products/get`
+      `${getApiUrl()}/api/admin/products/get`
     );
 
     return result?.data;
@@ -38,7 +39,7 @@ export const editProduct = createAsyncThunk(
   "/products/editProduct",
   async ({ id, formData }) => {
     const result = await axios.put(
-      `${import.meta.env.VITE_API_URL}/api/admin/products/edit/${id}`,
+      `${getApiUrl()}/api/admin/products/edit/${id}`,
       formData,
       {
         headers: {
@@ -55,7 +56,7 @@ export const deleteProduct = createAsyncThunk(
   "/products/deleteProduct",
   async (id) => {
     const result = await axios.delete(
-      `${import.meta.env.VITE_API_URL}/api/admin/products/delete/${id}`
+      `${getApiUrl()}/api/admin/products/delete/${id}`
     );
 
     return result?.data;
