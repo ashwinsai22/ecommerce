@@ -1,0 +1,108 @@
+pipeline {
+    agent any
+
+    /*
+     * ==============================================================================
+     * Full-Stack Minikube Practice Pipeline (Client + Server)
+     * ==============================================================================
+     * Use this when you want a single Jenkins pipeline to build and deploy BOTH
+     * the frontend and backend in one click on your local Linux / Minikube setup.
+     *
+     * Lightweight: No SonarQube, No Trivy, No OWASP, No Email notifications.
+     * ==============================================================================
+     */
+
+    environment {
+        CLIENT_IMAGE     = 'ashwinsai22/kr-market-client'
+        SERVER_IMAGE     = 'ashwinsai22/kr-market-server'
+        IMAGE_TAG        = "1.0.${env.BUILD_NUMBER}"
+        DOCKER_CREDS     = 'docker'       // Jenkins Credential ID for Docker Hub
+        GITOPS_REPO      = 'https://github.com/ashwinsai22/ecommerce-gitops.git'
+        GIT_CREDS        = 'github-creds' // Jenkins Credential ID for GitHub
+    }
+
+    stages {
+
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build & Push Docker Images') {
+            parallel {
+                stage('Build Client') {
+                    steps {
+                        withDockerRegistry(credentialsId: DOCKER_CREDS, url: 'https://index.docker.io/v1/') {
+                            sh '''
+                              echo "Building Client: $CLIENT_IMAGE:$IMAGE_TAG"
+                              docker build -t $CLIENT_IMAGE:$IMAGE_TAG -t $CLIENT_IMAGE:latest -f Dockerfile.client .
+                              docker push $CLIENT_IMAGE:$IMAGE_TAG
+                              docker push $CLIENT_IMAGE:latest
+                            '''
+                        }
+                    }
+                }
+                stage('Build Server') {
+                    steps {
+                        withDockerRegistry(credentialsId: DOCKER_CREDS, url: 'https://index.docker.io/v1/') {
+                            sh '''
+                              echo "Building Server: $SERVER_IMAGE:$IMAGE_TAG"
+                              docker build -t $SERVER_IMAGE:$IMAGE_TAG -t $SERVER_IMAGE:latest -f Dockerfile.server .
+                              docker push $SERVER_IMAGE:$IMAGE_TAG
+                              docker push $SERVER_IMAGE:latest
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Update GitOps Dev Environment') {
+            steps {
+                script {
+                    echo "Updating GitOps Dev environment in ${GITOPS_REPO} for both client and server..."
+                    withCredentials([gitUsernamePassword(credentialsId: GIT_CREDS, gitToolName: 'Default')]) {
+                        sh """
+                          rm -rf ecommerce-gitops
+                          git clone ${GITOPS_REPO} ecommerce-gitops
+                          cd ecommerce-gitops/environments/dev
+
+                          if command -v kustomize &> /dev/null; then
+                            kustomize edit set image ${CLIENT_IMAGE}=${CLIENT_IMAGE}:${IMAGE_TAG}
+                            kustomize edit set image ${SERVER_IMAGE}=${SERVER_IMAGE}:${IMAGE_TAG}
+                          else
+                            sed -i -E "s|(${CLIENT_IMAGE}[[:space:]]*newTag:[[:space:]]*).*|\\1\\"${IMAGE_TAG}\\"|g" kustomization.yaml || true
+                            sed -i -E "s|(${SERVER_IMAGE}[[:space:]]*newTag:[[:space:]]*).*|\\1\\"${IMAGE_TAG}\\"|g" kustomization.yaml || true
+                          fi
+
+                          git config user.name "Jenkins Minikube"
+                          git config user.email "jenkins@minikube.local"
+                          git add kustomization.yaml
+                          git diff --quiet && git diff --staged --quiet || git commit -m "ci(dev): minikube full-stack bump to ${IMAGE_TAG} [skip ci]"
+                          git push origin main || git push origin master
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "=================================================================="
+            echo "SUCCESS: Full-stack release ${IMAGE_TAG} published to GitOps Dev!"
+            echo "Argo CD in Minikube will automatically reconcile within 3 minutes."
+            echo "=================================================================="
+        }
+        failure {
+            echo "Pipeline failed. Check logs above."
+        }
+    }
+}

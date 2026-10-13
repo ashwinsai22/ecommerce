@@ -1,0 +1,100 @@
+pipeline {
+    agent any
+
+    /*
+     * ==============================================================================
+     * Local Practice Pipeline: KR-Market Client (Frontend)
+     * ==============================================================================
+     * Designed for local practice with Minikube and Jenkins in Docker.
+     * Lightweight: No SonarQube, No Trivy, No OWASP, No Email notifications.
+     *
+     * Flow:
+     * 1. Clean Workspace & Checkout
+     * 2. Docker Build & Push (Immutable tag 1.0.${BUILD_NUMBER} + latest)
+     * 3. Auto-update GitOps Dev manifest in github.com/ashwinsai22/ecommerce-gitops
+     * 4. Argo CD in Minikube detects Git commit and deploys to Kubernetes!
+     * ==============================================================================
+     */
+
+    environment {
+        IMAGE_NAME       = 'ashwinsai22/kr-market-client'
+        IMAGE_TAG        = "1.0.${env.BUILD_NUMBER}"
+        DOCKER_CREDS     = 'docker'       // Jenkins Credential ID for Docker Hub (Username/Password)
+        GITOPS_REPO      = 'https://github.com/ashwinsai22/ecommerce-gitops.git'
+        GIT_CREDS        = 'github-creds' // Jenkins Credential ID for GitHub (Username/Password or Personal Access Token)
+    }
+
+    stages {
+
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                withDockerRegistry(
+                    credentialsId: DOCKER_CREDS,
+                    url: 'https://index.docker.io/v1/'
+                ) {
+                    sh '''
+                      echo "=========================================================="
+                      echo "Building and pushing Client: $IMAGE_NAME:$IMAGE_TAG"
+                      echo "=========================================================="
+                      docker build -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest -f Dockerfile.client .
+                      docker push $IMAGE_NAME:$IMAGE_TAG
+                      docker push $IMAGE_NAME:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Update GitOps Dev Environment') {
+            steps {
+                script {
+                    echo "Updating GitOps Dev environment in ${GITOPS_REPO}..."
+                    // Uses Jenkins git credentials to push the updated tag to ecommerce-gitops
+                    withCredentials([gitUsernamePassword(credentialsId: GIT_CREDS, gitToolName: 'Default')]) {
+                        sh """
+                          rm -rf ecommerce-gitops
+                          git clone ${GITOPS_REPO} ecommerce-gitops
+                          cd ecommerce-gitops/environments/dev
+
+                          if command -v kustomize &> /dev/null; then
+                            kustomize edit set image ${IMAGE_NAME}=${IMAGE_NAME}:${IMAGE_TAG}
+                          else
+                            sed -i -E "s|(${IMAGE_NAME}[[:space:]]*newTag:[[:space:]]*).*|\\1\\"${IMAGE_TAG}\\"|g" kustomization.yaml || true
+                          fi
+
+                          git config user.name "Jenkins Minikube"
+                          git config user.email "jenkins@minikube.local"
+                          git add kustomization.yaml
+                          git diff --quiet && git diff --staged --quiet || git commit -m "ci(dev): minikube build bump client to ${IMAGE_TAG} [skip ci]"
+                          git push origin main || git push origin master
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "=================================================================="
+            echo "SUCCESS: Client image ${IMAGE_NAME}:${IMAGE_TAG} deployed to GitOps!"
+            echo "Argo CD in Minikube will automatically reconcile within 3 minutes."
+            echo "To sync immediately in Minikube: argocd app sync krmarket-dev"
+            echo "=================================================================="
+        }
+        failure {
+            echo "Pipeline failed. Check the logs above."
+        }
+    }
+}
