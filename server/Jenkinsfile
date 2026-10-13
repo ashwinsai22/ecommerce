@@ -10,12 +10,15 @@ pipeline {
         SCANNER_HOME = tool 'sonar-scanner'
         SONAR_ENV    = 'sonar-server'
 
-        IMAGE_NAME   = 'ashwinsai22/kr-market-server'
-        DOCKER_CREDS = 'docker'
+        IMAGE_NAME       = 'ashwinsai22/kr-market-server'
+        IMAGE_TAG        = "1.0.${env.BUILD_NUMBER}"
+        DOCKER_CREDS     = 'docker'
+        GITOPS_REPO      = 'https://github.com/ashwinsai22/ecommerce-gitops.git'
 
         ENFORCE_SONAR_QG = 'false'
         ENFORCE_OWASP    = 'false'
         ENFORCE_TRIVY_FS = 'false'
+        ENABLE_PROD_PROMOTION = 'false'
     }
 
     stages {
@@ -27,7 +30,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 git branch: 'master',
-                    url: 'https://github.com/ashwinsai22/ecommerce.git'
+                    url: 'https://github.com/ashwinsai22/test-env-ecommerce.git'
             }
         }
 
@@ -125,7 +128,9 @@ pipeline {
                     url: 'https://index.docker.io/v1/'
                 ) {
                     sh '''
-                      docker build -t $IMAGE_NAME:latest -f Dockerfile.server .
+                      echo "Building image with immutable tag: $IMAGE_NAME:$IMAGE_TAG and latest"
+                      docker build -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest -f Dockerfile.server .
+                      docker push $IMAGE_NAME:$IMAGE_TAG
                       docker push $IMAGE_NAME:latest
                     '''
                 }
@@ -134,7 +139,67 @@ pipeline {
 
         stage('Trivy Image Scan') {
             steps {
-                sh 'trivy image $IMAGE_NAME:latest'
+                sh 'trivy image $IMAGE_NAME:$IMAGE_TAG'
+            }
+        }
+
+        /* ===================== GITOPS DEV AUTO-UPDATE ===================== */
+
+        stage('Update GitOps Dev Environment') {
+            steps {
+                script {
+                    echo "Updating GitOps Dev environment in ${GITOPS_REPO} with new tag: ${IMAGE_TAG}"
+                    sh """
+                      rm -rf ecommerce-gitops
+                      git clone ${GITOPS_REPO} ecommerce-gitops
+                      cd ecommerce-gitops/environments/dev
+
+                      if command -v kustomize &> /dev/null; then
+                        kustomize edit set image ${IMAGE_NAME}=${IMAGE_NAME}:${IMAGE_TAG}
+                      else
+                        sed -i -E "s|(${IMAGE_NAME}[[:space:]]*newTag:[[:space:]]*).*|\\1\\"${IMAGE_TAG}\\"|g" kustomization.yaml || true
+                      fi
+
+                      git config user.name "Jenkins CI"
+                      git config user.email "jenkins@kr-market.local"
+                      git add kustomization.yaml
+                      git diff --quiet && git diff --staged --quiet || git commit -m "ci(dev): auto-bump server to ${IMAGE_TAG} [skip ci]"
+                      git push origin main || git push origin master
+                    """
+                }
+            }
+        }
+
+        /* ===================== PRODUCTION PROMOTION (MANUAL GATE) ===================== */
+
+        stage('Promote to Production (Approval)') {
+            when {
+                branch 'master'
+                expression { env.ENABLE_PROD_PROMOTION == 'true' }
+            }
+            steps {
+                input message: "Approve promoting kr-market-server:${IMAGE_TAG} to PRODUCTION?", ok: "Promote"
+                script {
+                    echo "Promoting ${IMAGE_NAME}:${IMAGE_TAG} to GitOps Production..."
+                    sh """
+                      if [ ! -d "ecommerce-gitops" ]; then
+                        git clone ${GITOPS_REPO} ecommerce-gitops
+                      fi
+                      cd ecommerce-gitops/environments/prod
+
+                      if command -v kustomize &> /dev/null; then
+                        kustomize edit set image ${IMAGE_NAME}=${IMAGE_NAME}:${IMAGE_TAG}
+                      else
+                        sed -i -E "s|(${IMAGE_NAME}[[:space:]]*newTag:[[:space:]]*).*|\\1\\"${IMAGE_TAG}\\"|g" kustomization.yaml || true
+                      fi
+
+                      git config user.name "Jenkins CI"
+                      git config user.email "jenkins@kr-market.local"
+                      git add kustomization.yaml
+                      git diff --quiet && git diff --staged --quiet || git commit -m "release(prod): promote server to ${IMAGE_TAG} [skip ci]"
+                      git push origin main || git push origin master
+                    """
+                }
             }
         }
     }
