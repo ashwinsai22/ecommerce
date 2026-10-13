@@ -47,9 +47,10 @@ pipeline {
 
         stage('Update GitOps Dev Environment') {
             steps {
-                sshagent(credentials: [SSH_CREDS]) {
+                withCredentials([sshUserPrivateKey(credentialsId: SSH_CREDS, keyFileVariable: 'SSH_KEY_FILE', usernameVariable: 'SSH_USER')]) {
                     sh """
-                        export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no"
+                        # Pass the private key file directly to the SSH command without interactive host checking
+                        export GIT_SSH_COMMAND="ssh -i \${SSH_KEY_FILE} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
                         rm -rf ecommerce-gitops
                         git clone ${GITOPS_REPO} ecommerce-gitops
@@ -83,7 +84,7 @@ pipeline {
         success {
             echo "=================================================================="
             echo "SUCCESS: Full-stack release ${IMAGE_TAG} published to GitOps Dev!"
-            echo "Argo CD will pick up changes shortly."
+            echo "Argo CD will reconcile the updated image automatically."
             echo "=================================================================="
         }
         failure {
