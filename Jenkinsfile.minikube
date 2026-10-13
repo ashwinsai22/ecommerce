@@ -7,7 +7,7 @@ pipeline {
         IMAGE_TAG        = "1.0.${env.BUILD_NUMBER}"
         DOCKER_CREDS     = 'docker'
         GITOPS_REPO      = 'git@github.com:ashwinsai22/ecommerce-gitops.git'
-        SSH_CREDS        = 'github-ssh-creds'
+        SSH_CREDS        = 'github-ssh-key' // Matches your Jenkins credential ID
     }
 
     stages {
@@ -49,7 +49,7 @@ pipeline {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: SSH_CREDS, keyFileVariable: 'SSH_KEY_FILE', usernameVariable: 'SSH_USER')]) {
                     sh """
-                        # Pass the private key file directly to the SSH command without interactive host checking
+                        # Pass the private key file directly to git ssh commands
                         export GIT_SSH_COMMAND="ssh -i \${SSH_KEY_FILE} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
                         rm -rf ecommerce-gitops
